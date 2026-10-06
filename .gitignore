@@ -13,6 +13,8 @@
 # MAVEN
 # ========================
 target/
+dist/
+.tools/
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
