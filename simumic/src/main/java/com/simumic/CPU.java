@@ -387,8 +387,6 @@ public class CPU {
     }
 
     private void sub1() {
-        if (mpc == 0)
-            instrucoesExecutadas++;
         statusCiclo = "SUB1";
         msgMPC = String.format("MPC %02d: [%s]", mpc, mpcStrings[mpc]);
 
@@ -506,14 +504,14 @@ public class CPU {
                 break;
         }
         mpc = proximoMPC & 0xFF; // 8 bits (256 posições na Control Store)
+        if (mpc == 0)
+            instrucoesExecutadas++;
     }
 
     public void executarCicloCompleto() {
-        sub1();
-        sub2();
-        sub3();
-        sub4();
-        subcicloAtual = 1;
+        do {
+            executarSubciclo();
+        } while (subcicloAtual != 1);
     }
 
     public int getMAR() {

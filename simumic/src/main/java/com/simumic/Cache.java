@@ -83,6 +83,8 @@ public class Cache implements AcessoMemoria {
             hits++;
         }
 
+        ultimoAcessoHit = hit;
+
         ultimoEndereco = endereco;
         ultimoBloco = bloco;
         ultimaLinha = linha;
@@ -104,6 +106,7 @@ public class Cache implements AcessoMemoria {
         ultimoEndereco = -1;
         ultimoBloco = -1;
         ultimaLinha = -1;
+        ultimoAcessoHit = false;
     }
 
     public long getHits() {

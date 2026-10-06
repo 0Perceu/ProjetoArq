@@ -16,6 +16,9 @@ import javafx.stage.Stage;
 import javafx.util.Duration;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Map;
 
 public class PrimaryController {
@@ -92,7 +95,7 @@ public class PrimaryController {
     private Cache cacheL2;
 
     private Timeline autoRunTimeline;
-    private int ultimoEnderecoPrograma = 0;
+    private int[] programaOriginal = new int[0];
     private Stage janelaMemoria;
     private Stage janelaCache;
     private TertiaryController tertiaryController;
@@ -131,41 +134,70 @@ public class PrimaryController {
         atualizarLabels();
     }
 
-    @FXML
-    private void resetCpu() {
-        labelAssemblerStatus.setText("");
-        cpu.reset();
-        if (cacheL1 != null) {
-            cacheL1.clear();
-        }
-        if (cacheL2 != null) {
-            cacheL2.clear();
-        }
-        btnSubciclo.setText("SUBCICLO 0");
+    public void encerrar() {
+        pararAutoRun();
+        if (janelaMemoria != null) janelaMemoria.close();
+        if (janelaCache != null) janelaCache.close();
+    }
 
+    private void mostrarStatus(String texto, boolean erro) {
+        labelAssemblerStatus.setTextFill(erro ? COR_VERMELHO : COR_VERDE);
+        labelAssemblerStatus.setText(texto);
+    }
+
+    private void restaurarPrograma() {
+        ram.clear();
+        for (int i = 0; i < programaOriginal.length; i++) ram.write(i, programaOriginal[i]);
+        cacheL1.clear();
+        cacheL2.clear();
+        cpu.reset();
+        labelMPC.setText("---");
         atualizarBotaoSubciclo();
         atualizarLabels();
-        atualizarJanelaCache();
+    }
+
+    @FXML
+    private void resetCpu() {
+        pararAutoRun();
+        restaurarPrograma();
+        mostrarStatus(programaOriginal.length == 0 ? "Carregue um programa." : "Programa reiniciado.", false);
+    }
+
+    private boolean podeAvancar() {
+        if (programaOriginal.length == 0) {
+            pararAutoRun();
+            mostrarStatus("Carregue um programa antes de executar.", true);
+            return false;
+        }
+        if (cpu.getMPC() == 0 && cpu.getSubcicloAtual() == 1) {
+            int pc = cpu.getReg(0) & 0xFFFF;
+            if (pc >= programaOriginal.length) {
+                pararAutoRun();
+                mostrarStatus("Execução pausada: PC fora do programa carregado.", false);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void avancarSubciclo() {
+        cpu.executarSubciclo();
+        atualizarLabels();
+        atualizarBotaoSubciclo();
+        if (cpu.getSubcicloAtual() == 1) imprimirConsoleMPC();
     }
 
     @FXML
     private void execSubciclo() {
-        labelAssemblerStatus.setText("");
-        cpu.executarSubciclo();
-        atualizarLabels();
-        atualizarBotaoSubciclo();
-
-        if ((cpu.getSubcicloAtual() == 1))
-            imprimirConsoleMPC();
+        if (podeAvancar()) avancarSubciclo();
     }
 
     @FXML
     private void execCicloCompleto() {
-        labelAssemblerStatus.setText("");
-        cpu.executarCicloCompleto();
-        atualizarLabels();
-        atualizarBotaoSubciclo();
-        imprimirConsoleMPC();
+        if (!podeAvancar()) return;
+        do {
+            avancarSubciclo();
+        } while (cpu.getSubcicloAtual() != 1);
     }
 
     @FXML
@@ -173,17 +205,21 @@ public class PrimaryController {
         if (autoRunTimeline != null && autoRunTimeline.getStatus() == Animation.Status.RUNNING) {
             pararAutoRun();
         } else {
-            int delay = Integer.parseInt(txtDelay.getText());
+            if (!podeAvancar()) return;
+            int delay;
+            try {
+                delay = Integer.parseInt(txtDelay.getText().trim());
+            } catch (NumberFormatException e) {
+                mostrarStatus("Informe um intervalo entre 10 e 5000 ms.", true);
+                return;
+            }
+            if (delay < 10 || delay > 5000) {
+                mostrarStatus("Informe um intervalo entre 10 e 5000 ms.", true);
+                return;
+            }
             autoRunTimeline = new Timeline(
                     new KeyFrame(Duration.millis(delay), e -> {
-                        execSubciclo();
-                        
-                        if (cpu.getSubcicloAtual() == 1 && cpu.getMPC() == 0) {
-                            int pcAtual = cpu.getRegs().get("PC");
-                            if (pcAtual > ultimoEnderecoPrograma) {
-                                pararAutoRun();
-                            }
-                        }
+                        if (podeAvancar()) avancarSubciclo();
                     }));
             autoRunTimeline.setCycleCount(Timeline.INDEFINITE);
             autoRunTimeline.play();
@@ -224,7 +260,7 @@ public class PrimaryController {
             cena.setUserData(ctrl);
 
             janelaMemoria = new Stage();
-            janelaMemoria.setTitle("Inspetor de Memória RAM — SimuMIC");
+            janelaMemoria.setTitle("Inspetor de Memória RAM — ProjetoArq");
             janelaMemoria.setScene(cena);
             janelaMemoria.show();
 
@@ -262,7 +298,7 @@ public class PrimaryController {
             Scene cena = new Scene(root, 980, 620);
 
             janelaCache = new Stage();
-            janelaCache.setTitle("Cache - SimuMIC");
+            janelaCache.setTitle("Cache — ProjetoArq");
             janelaCache.setScene(cena);
             janelaCache.setOnShown(e -> atualizarJanelaCache());
             janelaCache.show();
@@ -431,11 +467,12 @@ public class PrimaryController {
         }
                 
         if (cpu.getSinalControle().equals("READ") || cpu.getSinalControle().equals("WRITE")) {
+            boolean escrita = "WRITE".equals(cpu.getSinalControle());
             
             rectL1.setStroke(cacheL1.isUltimoAcessoHit() ? COR_VERDE : COR_VERMELHO);
             rectL2.setStroke(cacheL2.isUltimoAcessoHit() ? COR_VERDE : COR_VERMELHO);
             
-            if (!cacheL1.isUltimoAcessoHit() && !cacheL2.isUltimoAcessoHit()) {
+            if (escrita || (!cacheL1.isUltimoAcessoHit() && !cacheL2.isUltimoAcessoHit())) {
                 rectRAM.setStroke(COR_VERDE);
             } else {
                 rectRAM.setStroke(COR_CINZA);
@@ -617,11 +654,11 @@ public class PrimaryController {
         lMarL1.setStroke(COR_VERDE);
         lMbrL1.setStroke(COR_VERDE);
 
-        if (!cacheL1.isUltimoAcessoHit()) {
+        if ("WRITE".equals(cpu.getSinalControle()) || !cacheL1.isUltimoAcessoHit()) {
             lL1L2_Mar.setStroke(COR_VERDE);
             lL1L2_Mbr.setStroke(COR_VERDE);
 
-            if (!cacheL2.isUltimoAcessoHit()) {
+            if ("WRITE".equals(cpu.getSinalControle()) || !cacheL2.isUltimoAcessoHit()) {
                 lL2Ram_Mar.setStroke(COR_VERDE);
                 lL2Ram_Mbr.setStroke(COR_VERDE);
             }
@@ -637,125 +674,27 @@ public class PrimaryController {
 
     @FXML
     private void montarCodigo() {
-        String texto = consoleMacro.getText();
-        if (texto == null || texto.trim().isEmpty()) {
-            labelAssemblerStatus.setTextFill(COR_VERMELHO);
-            labelAssemblerStatus.setText("Console vazio!");
-            return;
+        pararAutoRun();
+        try {
+            int[] palavras = Assembler.assemble(consoleMacro.getText());
+            programaOriginal = Arrays.copyOf(palavras, palavras.length);
+            restaurarPrograma();
+            mostrarStatus(palavras.length + " instruções carregadas.", false);
+        } catch (AssemblerException e) {
+            mostrarStatus(e.getMessage(), true);
         }
-
-        String[] linhas = texto.split("\\n");
-        int endereco = 0;
-        int sucesso = 0;
-
-        for (String linha : linhas) {
-            linha = linha.trim();
-            if (linha.isEmpty() || linha.startsWith(";"))
-                continue;
-
-            try {
-                int instrucaoMontada = parseLinha(linha);
-                ram.write(endereco, instrucaoMontada);
-                ultimoEnderecoPrograma = Math.max(ultimoEnderecoPrograma, endereco);
-                endereco++;
-                sucesso++;
-            } catch (Exception e) {
-                labelAssemblerStatus.setTextFill(COR_VERMELHO);
-                labelAssemblerStatus.setText("Erro de sintaxe na linha " + (sucesso + 1) + "!");
-                return;
-            }
-        }
-
-        labelAssemblerStatus.setTextFill(COR_VERDE);
-        labelAssemblerStatus.setText(sucesso + " instruções na RAM!");
-        System.out.println("Montagem concluída com sucesso.");
     }
 
-    private int parseLinha(String linha) {
-        String[] partes = linha.trim().split("\\s+");
-        String mnem = partes[0].toUpperCase();
-        int arg = 0;
-
-        if (partes.length > 1)
-            arg = Integer.parseInt(partes[1]);
-
-        int opcode = 0;
-
-        switch (mnem) {
-            case "LODD":
-                opcode = 0x0000;
-                break;
-            case "STOD":
-                opcode = 0x1000;
-                break;
-            case "ADDD":
-                opcode = 0x2000;
-                break;
-            case "SUBD":
-                opcode = 0x3000;
-                break;
-            case "JPOS":
-                opcode = 0x4000;
-                break;
-            case "JZER":
-                opcode = 0x5000;
-                break;
-            case "JUMP":
-                opcode = 0x6000;
-                break;
-            case "LOCO":
-                opcode = 0x7000;
-                break;
-            case "LODL":
-                opcode = 0x8000;
-                break;
-            case "STOL":
-                opcode = 0x9000;
-                break;
-            case "ADDL":
-                opcode = 0xA000;
-                break;
-            case "SUBL":
-                opcode = 0xB000;
-                break;
-            case "JNEG":
-                opcode = 0xC000;
-                break;
-            case "JNZE":
-                opcode = 0xD000;
-                break;
-            case "CALL":
-                opcode = 0xE000;
-                break;
-            case "PSHI":
-                opcode = 0xF000;
-                break;
-            case "POPI":
-                opcode = 0xF200;
-                break;
-            case "PUSH":
-                opcode = 0xF400;
-                break;
-            case "POP":
-                opcode = 0xF600;
-                break;
-            case "RETN":
-                opcode = 0xF800;
-                break;
-            case "SWAP":
-                opcode = 0xFA00;
-                break;
-            case "INSP":
-                opcode = 0xFC00;
-                break;
-            case "DESP":
-                opcode = 0xFE00;
-                break;
-            default:
-                throw new IllegalArgumentException("Mnemônico desconhecido: " + mnem);
+    @FXML
+    private void carregarExemplo() {
+        pararAutoRun();
+        try (InputStream stream = getClass().getResourceAsStream("/com/simumic/examples/soma.asm")) {
+            if (stream == null) throw new IOException("Exemplo não encontrado.");
+            consoleMacro.setText(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+            montarCodigo();
+        } catch (IOException e) {
+            mostrarStatus("Não foi possível carregar o exemplo.", true);
         }
-
-            return opcode | (arg & 0x0FFF);
     }
 
     private void atualizarJanelaCache() {

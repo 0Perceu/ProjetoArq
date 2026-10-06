@@ -1,12 +1,13 @@
 // Memória externa que contém endereços, dados e se comunica com MBR e MAR
 package com.simumic;
 
-public class Memoria implements AcessoMemoria {
-    private int[] enderecos = new int[4096];
+import java.util.Arrays;
 
-    public Memoria() {
-        // Debugando lod do endereço 10
-        enderecos[0] = 0x000A;
+public class Memoria implements AcessoMemoria {
+    private final int[] enderecos = new int[4096];
+
+    public void clear() {
+        Arrays.fill(enderecos, 0);
     }
 
     // Sinal RD
@@ -15,14 +16,13 @@ public class Memoria implements AcessoMemoria {
         if (endereco >= 0 && endereco < enderecos.length) {
             return enderecos[endereco];
         }
-        System.out.println("FORA DE INDEXX");
         return 0;
     }
 
     // Sinal WR
     public void write(int endereco, int dado) {
         if (endereco >= 0 && endereco < enderecos.length) {
-            enderecos[endereco] = dado;
+            enderecos[endereco] = dado & 0xFFFF;
         }
     }
 }
