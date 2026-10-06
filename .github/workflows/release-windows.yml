@@ -1,0 +1,78 @@
+name: Release Windows
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21.0.12.1+1'
+          cache: maven
+          cache-dependency-path: simumic/pom.xml
+      - name: Validar versão
+        shell: pwsh
+        run: |
+          [xml] $pom = Get-Content simumic/pom.xml
+          $version = [string] $pom.project.version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Versão do POM deve ser numérica.' }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME difere da versão v$version."
+          }
+      - name: Obter WiX 3.14.1 oficial
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip'
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\wix314-binaries.zip"
+          $expected = '6AC824E1642D6F7277D0ED7EA09411A508F6116BA6FAE0AA5F2C7DAA2FF43D31'
+          $actual = (Get-FileHash "$env:RUNNER_TEMP\wix314-binaries.zip" -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw 'Checksum do WiX não confere.' }
+          Expand-Archive -LiteralPath "$env:RUNNER_TEMP\wix314-binaries.zip" -DestinationPath "$env:RUNNER_TEMP\wix314"
+          "$env:RUNNER_TEMP\wix314" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Gerar portátil e instalador
+        shell: pwsh
+        run: .\scripts\package-windows.ps1 -PackageType all
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem dist/ProjetoArq-*.zip, dist/ProjetoArq-*-setup.exe | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          } | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ProjetoArq-release-windows
+          path: dist/*
+          if-no-files-found: error
+
+  draft-release:
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ProjetoArq-release-windows
+          path: dist
+      - name: Criar Release em rascunho
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(Get-ChildItem dist -File | ForEach-Object FullName)
+          if ($assets.Count -ne 3) { throw 'São esperados ZIP, instalador e checksums.' }
+          gh release create "$env:GITHUB_REF_NAME" @assets --repo "$env:GITHUB_REPOSITORY" --draft --generate-notes --title "ProjetoArq $env:GITHUB_REF_NAME"
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar Release em rascunho.' }

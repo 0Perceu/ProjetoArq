@@ -1,5 +1,37 @@
 # 🖥️ SimuMIC
 
+## Abrir no Windows
+
+Baixe a versão mais recente em [Releases](https://github.com/0Perceu/ProjetoArq/releases). Há duas opções:
+
+- **Instalador** (`ProjetoArq-*-windows-x64-setup.exe`): instale para sua conta e abra pelo atalho ProjetoArq.
+- **Portátil** (`ProjetoArq-*-windows-x64.zip`): extraia o ZIP inteiro e abra `ProjetoArq.exe` dentro da pasta extraída. Mantenha as outras pastas junto do executável.
+
+O aplicativo já inclui Java. Para simular, clique em **Carregar exemplo**, depois em **CICLO COMPLETO**, **SUBCICLO** ou **AUTO RUN**. O exemplo contém cinco instruções e deixa o valor `0008` em AC e no endereço 51 da RAM. **REINICIAR** restaura o programa carregado ao estado inicial.
+
+O simulador pausa quando PC sai da região do programa montado. Isso não é uma instrução HALT; programas em loop podem ser parados pelo botão **PARAR**. O campo ao lado de AUTO RUN aceita intervalos de 10 a 5000 ms. O montador aceita operandos decimais, comentários com `;` e até 4096 palavras.
+
+### Desenvolver e gerar pacotes
+
+Requisitos para desenvolver: Windows x64, JDK 21 com `JAVA_HOME` configurado e internet no primeiro build. O [Maven Wrapper](https://maven.apache.org/tools/wrapper/) baixa a versão fixada do Maven; não é preciso instalar Maven separadamente.
+
+```powershell
+cd "<pasta onde você clonou ProjetoArq>"
+.\scripts\dev.ps1
+```
+
+Também é possível usar `cd simumic` seguido de `.\mvnw.cmd clean verify` e `.\mvnw.cmd javafx:run`. Para gerar a versão portátil:
+
+```powershell
+.\scripts\package-windows.ps1 -PackageType portable
+```
+
+Para gerar também o instalador, tenha WiX Toolset 3.14.1 (`candle.exe` e `light.exe`) no `PATH` e execute `-PackageType all`. Os arquivos são criados em `dist/`; não são versionados. O GitHub Actions repete o build no Windows e anexa os pacotes ao workflow. Em uma tag `v1.0.0` correspondente ao POM, cria uma Release **em rascunho** para revisão antes de publicar.
+
+O código e as decisões de implementação estão em [docs/PLANO_EXECUCAO.md](docs/PLANO_EXECUCAO.md). Consulte [docs/VALIDACAO_WINDOWS.md](docs/VALIDACAO_WINDOWS.md) para os testes efetivamente realizados e as verificações pendentes.
+
+O código original do simulador e seu histórico foram preservados neste repositório. A documentação original abaixo descreve a arquitetura e a execução pelo Docker, que permanece como alternativa para ambientes Linux com X11.
+
 ![Java](https://img.shields.io/badge/Java-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)
 ![JavaFX](https://img.shields.io/badge/JavaFX-FF0000?style=for-the-badge&logo=java&logoColor=white)
 ![Maven](https://img.shields.io/badge/Maven-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)
@@ -37,13 +69,13 @@ O motor do simulador modela o hardware com alta fidelidade, exibindo o estado da
 
 ---
 
-## 🐳 Como rodar com Docker (Recomendado)
+## 🐳 Como rodar com Docker (alternativa para Linux/X11)
 
 Não é necessário ter o Java ou o Maven instalados na sua máquina local para testar a aplicação. Basta ter o Docker configurado.
 
 **1. Construir a imagem do simulador:**
 ```bash
-sudo docker build -t simumic-app .
+sudo docker build -t simumic-app simumic/
 ```
 **2. Executar o simulador (Linux):**
 
