@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21.0.12.1+1'
+          java-version: '21'
           cache: maven
           cache-dependency-path: simumic/pom.xml
       - name: Registrar versão do Java
